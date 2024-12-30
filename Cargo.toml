@@ -5,5 +5,9 @@ edition = "2021"
 
 [dependencies]
 actix-web = { version = "4.9.0", features = ["macros"] }
+actix-cors = "0.7.0"
+actix-session = "0.10.1"
 sqlx = { version = "0.8.2", features = ["mysql", "runtime-tokio-native-tls"] }
 dotenv = "0.15"
+serde = { version = "1.0.217", features = ["derive"] }
+bcrypt = "0.16.0"
