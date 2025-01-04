@@ -1,43 +1,56 @@
-use actix_web::{App, HttpServer,web::Data};
 use actix_cors::Cors;
-// use actix_session::{SessionMiddleware, storage::RedisSessionStore};
+use actix_session::{storage::RedisSessionStore, SessionMiddleware, config::PersistentSession};
+use actix_web::{web::Data, App, HttpServer, cookie::{Key, time::Duration}};
 use sqlx::mysql::MySqlPool;
 mod api;
-use api::login::login;
-use api::create_user::create_user;
+// use api::create_user::create_user;
+use api::{login::login,check_session::check_session};
 #[actix_web::main]
-async fn main()-> Result<(), std::io::Error>{
+async fn main() -> Result<(), std::io::Error> {
     dotenv::dotenv().ok();
     let datacase_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set.");
-    let db_pool = MySqlPool::connect(&datacase_url).await.expect("Failed to connect to the database.");
+    let redis_url = std::env::var("REDIS_URL").expect("REDIS_URL must be set");
     let ip = std::env::var("IP").expect("IP must be set.");
     let port = std::env::var("PORT").expect("PORT must be set.");
-
-    // let redis_url = std::env::var("REDIS_URL").expect("REDIS_URL must be set.");
-    // let redis_store = RedisSessionStore::new(&redis_url)
-    //     .await
-    //     .expect("Failed to connect to Redis.");
+    let redis_store = RedisSessionStore::new(&redis_url)
+        .await
+        .expect("Failed to connect to Redis");
+    let db_pool = MySqlPool::connect(&datacase_url)
+        .await
+        .expect("Failed to connect to the database.");
     println!("Starting server at http://{}:{}...", ip, port);
     HttpServer::new(move || {
         App::new()
-        .wrap(
-            Cors::default()
-                .allowed_origin("http://140.128.101.24:8080") // 允許前端的域名
-                .allowed_methods(vec!["GET", "POST", "OPTIONS"]) // 允許的方法
-                .allowed_headers(vec!["Content-Type", "Authorization"]) // 允許的請求頭
-                .supports_credentials() // 支持附帶 Cookie
-        )
-        // .wrap(SessionMiddleware::builder(redis_store.clone(), actix_web::cookie::Key::generate())
-        //         .cookie_secure(false) // 本地測試時禁用 HTTPS 要求
-        //         .cookie_http_only(true) // 確保 Cookie 不可被 JS 訪問
-        //         .cookie_same_site(SameSite::None) // 允許跨域 Cookie
-        //         .build(),
-        //     )
-        .app_data(Data::new(db_pool.clone()))
-        .service(login)
-        .service(create_user)//要創建新使用者在打開
+            .wrap(
+                Cors::default()
+                    .allowed_origin("http://140.128.101.24:8080") // 允許前端的域名
+                    .allowed_methods(vec!["GET", "POST", "OPTIONS"]) // 允許的方法
+                    .allowed_headers(vec!["Content-Type", "Authorization", "X-CSRF-Token"]) // 允許的請求頭
+                    .expose_headers(vec!["X-CSRF-Token"]) //沒有允許暴露的話前端是無法讀取的
+                    .supports_credentials(), // 支持附帶 Cookie
+            )
+            .wrap(
+                SessionMiddleware::builder(redis_store.clone(), get_secret_key())
+                    .cookie_http_only(true)
+                    .cookie_secure(false) //限制https
+                    .cookie_same_site(actix_web::cookie::SameSite::Lax)
+                    .session_lifecycle(
+                        PersistentSession::default()
+                            .session_ttl(Duration::seconds(3 * 60 * 60)) //配置session的TTL
+                    )
+                    .build(),
+            )
+            .app_data(Data::new(db_pool.clone()))
+            .service(login)
+            .service(check_session)
+            // .service(create_user) //要創建新使用者在打開
     })
-    .bind(format!("{}:{}",ip,port))?
+    .bind(format!("{}:{}", ip, port))?
     .run()
     .await
+}
+
+fn get_secret_key() -> Key {
+    let key = std::env::var("SESSION_SECRET_KEY").expect("SESSION_SECRET_KEY must be set");
+    Key::from(key.as_bytes())
 }

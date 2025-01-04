@@ -1,8 +1,11 @@
 use actix_web::{post, web, HttpResponse, Responder};
+use actix_session::Session;
 use serde::Deserialize;
 use sqlx::mysql::MySqlPool;
 use sqlx::Error;
 use bcrypt::verify;
+use rand::Rng;
+use sha2::{Digest, Sha256};
 #[derive(Deserialize)]
 pub struct LoginRequest {
     username: String,
@@ -13,13 +16,24 @@ pub struct LoginRequest {
 async fn login(
     db_pool: web::Data<MySqlPool>,
     login_data: web::Json<LoginRequest>,
+    session: Session,
 ) -> impl Responder {
     let username = &login_data.username;
     let password = &login_data.password;
 
-    // 檢查用戶是否存在並驗證密碼
     match validate_user(db_pool.get_ref(), username, password).await {
-        Ok(valid) if valid => HttpResponse::Ok().body("Login successful!"),
+        Ok(valid) if valid => {
+            session.insert("username", username).unwrap();
+            session.insert("is_logged_in", true).unwrap();
+
+            // 生成 CSRF Token 並存入會話
+            let csrf_token = generate_csrf_token();
+            session.insert("csrf_token", &csrf_token).unwrap();
+            println!("登入成功");
+            HttpResponse::Ok()
+                .insert_header(("X-CSRF-Token", csrf_token)) // 將 Token 放入回應頭
+                .body("Login successful!")
+        }
         Ok(_) => HttpResponse::Unauthorized().body("Invalid username or password."),
         Err(err) => {
             eprintln!("Database error: {:?}", err);
@@ -50,5 +64,9 @@ async fn validate_user(
     }
 }
 
-
-
+fn generate_csrf_token() -> String {
+    let mut rng = rand::thread_rng();
+    let random_bytes: [u8; 32] = rng.gen();
+    let hash = Sha256::digest(&random_bytes);
+    hex::encode(hash) // 將 CSRF Token 轉為十六進制字符串
+}
