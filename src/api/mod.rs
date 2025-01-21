@@ -4,3 +4,4 @@ pub mod check_session;
 pub mod excel_search_pass;
 pub mod student_id_search;
 pub mod lib;
+pub mod get_exam_session_info;

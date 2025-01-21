@@ -8,6 +8,7 @@ use api::{login::login,
     check_session::check_session,
     excel_search_pass::excel_search_pass,
     student_id_search::student_id_search,
+    get_exam_session_info::get_exam_session_info
 };
 #[actix_web::main]
 async fn main() -> Result<(), std::io::Error> {
@@ -49,6 +50,7 @@ async fn main() -> Result<(), std::io::Error> {
             .service(check_session)
             .service(excel_search_pass)
             .service(student_id_search)
+            .service(get_exam_session_info)
             // .service(create_user) //要創建新使用者在打開
     })
     .bind(format!("{}:{}", ip, port))?
