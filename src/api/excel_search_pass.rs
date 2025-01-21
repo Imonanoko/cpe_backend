@@ -126,32 +126,34 @@ async fn excel_search_pass(
 
     let mut result: Vec<(String, String, u16, u8)> = Vec::new();
     for student_id in student_ids.iter() {
-        let rows = match sqlx::query(query)
+        let row = match sqlx::query(query)
             .bind(student_id)
-            .fetch_all(db_pool.get_ref())
+            .fetch_one(db_pool.get_ref())
             .await
         {
-            Ok(rows) => rows,
+            Ok(row) => row,
+            Err(sqlx::Error::RowNotFound) => {
+                return HttpResponse::NotFound().body(format!("查無此學生:{}，請先建立此學生的資料再進行查詢",student_id));
+            }
             Err(err) => {
-                println!("Database query failed: {}", err);
-                continue;
+                return HttpResponse::InternalServerError().body(format!("查詢失敗: {}", err));
             }
         };
         // println!("rows: {:#?}", rows);
-        for row in rows {
-            let student_id: String = row.try_get("StudentID").expect("Failed to get StudentID");
-            let name: String = row
-                .try_get("Name")
-                .unwrap_or_else(|_| "Unknown".to_string());
-            let total_correct_answers: u16 = row
-                .try_get("TotalCorrectAnswers")
-                .expect("Failed to get TotalCorrectAnswers");
-            let max_correct_answers: u8 = row
-                .try_get("MaxCorrectAnswers")
-                .expect("Failed to get MaxCorrectAnswers");
+        
+        let student_id: String = row.try_get("StudentID").expect("Failed to get StudentID");
+        let name: String = row
+            .try_get("Name")
+            .unwrap_or_else(|_| "Unknown".to_string());
+        let total_correct_answers: u16 = row
+            .try_get("TotalCorrectAnswers")
+            .expect("Failed to get TotalCorrectAnswers");
+        let max_correct_answers: u8 = row
+            .try_get("MaxCorrectAnswers")
+            .expect("Failed to get MaxCorrectAnswers");
 
-            result.push((student_id, name, total_correct_answers, max_correct_answers));
-        }
+        result.push((student_id, name, total_correct_answers, max_correct_answers));
+        
     }
 
     let output_filepath = "./uploads/result_file.xlsx";
