@@ -4,13 +4,19 @@ use actix_web::{web::Data, App, HttpServer, cookie::{Key, time::Duration}};
 use sqlx::mysql::MySqlPool;
 mod api;
 // use api::create_user::create_user;
-use api::{login::login,
+use api::{
+    login::login,
     check_session::check_session,
-    excel_search_pass::excel_search_pass,
-    student_id_search::student_id_search,
-    get_exam_session_info::get_exam_session_info,
-    search_absent_and_excused::search_absent_and_excused,
-    excel_search_absent::excel_search_absent
+    query::{
+        excel_search_pass::excel_search_pass,
+        student_id_search::student_id_search,
+        get_exam_session_info::get_exam_session_info,
+        search_absent_and_excused::search_absent_and_excused,
+        excel_search_absent::excel_search_absent
+    },
+    create::{
+        add_exam::add_exam,
+    }
 };
 #[actix_web::main]
 async fn main() -> Result<(), std::io::Error> {
@@ -55,6 +61,7 @@ async fn main() -> Result<(), std::io::Error> {
             .service(get_exam_session_info)
             .service(search_absent_and_excused)
             .service(excel_search_absent)
+            .service(add_exam)
             // .service(create_user) //要創建新使用者在打開
     })
     .bind(format!("{}:{}", ip, port))?

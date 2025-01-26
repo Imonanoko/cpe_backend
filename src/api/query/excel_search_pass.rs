@@ -1,19 +1,18 @@
-use super::lib::is_authorization;
 use actix_multipart::Multipart;
 use actix_session::Session;
 use actix_web::{post, web, HttpRequest, HttpResponse};
 use calamine::DataType;
 use calamine::Reader;
-use chrono::NaiveDate;
 use futures_util::StreamExt as _;
 use sqlx::MySqlPool;
 use sqlx::Row;
 use std::fs::File;
 use std::io::Write;
 use xlsxwriter::Workbook;
+use crate::api::lib::is_authorization;
 
-#[post("/api/excel_search_absent")]
-async fn excel_search_absent(
+#[post("/api/excel_search_pass")]
+async fn excel_search_pass(
     mut payload: Multipart,
     req: HttpRequest,
     session: Session,
@@ -92,39 +91,51 @@ async fn excel_search_absent(
         return HttpResponse::BadRequest().body("沒有找到任何有效的學號");
     }
     let query = r#"
-    SELECT ea.IsExcused , es.ExamDate, es.ExamType, ea.Notes
-    FROM ExamAttendance ea
-    JOIN ExamSessions es ON ea.ExamSession_SN = es.SN
-    WHERE ea.StudentID = (?)
-    AND ea.IsAbsent = TRUE
-    ORDER BY es.ExamDate DESC
-    LIMIT 1;
+    SELECT 
+        si.StudentID AS StudentID, 
+        si.Name AS Name,
+        CAST(COALESCE(SUM(ea.CorrectAnswersCount), 0) AS UNSIGNED INTEGER) AS TotalCorrectAnswers, 
+        CAST(COALESCE(MAX(ea.CorrectAnswersCount), 0) AS UNSIGNED INTEGER) AS MaxCorrectAnswers
+    FROM 
+        StudentInfo si
+    LEFT JOIN 
+        ExamAttendance ea ON si.StudentID = ea.StudentID
+    WHERE 
+        si.StudentID = (?)
+    GROUP BY 
+        si.StudentID, si.Name;
     "#;
 
-    let mut result: Vec<(String,String, NaiveDate, String, Option<String>)> = Vec::new();
+    let mut result: Vec<(String, String, u16, u8)> = Vec::new();
     for student_id in student_ids.iter() {
-        match sqlx::query(query)
+        let row = match sqlx::query(query)
             .bind(student_id)
-            .fetch_optional(db_pool.get_ref()) // 改成 fetch_optional
+            .fetch_one(db_pool.get_ref())
             .await
         {
-            Ok(Some(row)) => {
-                // 如果查到資料
-                let is_excused: bool = row.try_get("IsExcused").expect("Failed to get IsExcused");
-                let absent_status = if is_excused { "請假".to_string() } else { "缺考".to_string()};
-                let exam_date: NaiveDate = row.try_get("ExamDate").expect("Failed to get ExamDate");
-                let exam_type: String = row.try_get("ExamType").expect("Failed to get ExamType");
-                let notes: Option<String> = row.try_get("Notes").expect("Failed to get Notes");
-                result.push((student_id.to_string(), absent_status, exam_date, exam_type, notes));
-            }
-            Ok(None) => {
-                ()
+            Ok(row) => row,
+            Err(sqlx::Error::RowNotFound) => {
+                return HttpResponse::NotFound().body(format!("查無此學生:{}，請先建立此學生的資料再進行查詢",student_id));
             }
             Err(err) => {
-                // 如果查詢過程中發生錯誤
                 return HttpResponse::InternalServerError().body(format!("查詢失敗: {}", err));
             }
-        }
+        };
+        // println!("rows: {:#?}", rows);
+        
+        let student_id: String = row.try_get("StudentID").expect("Failed to get StudentID");
+        let name: String = row
+            .try_get("Name")
+            .unwrap_or_else(|_| "Unknown".to_string());
+        let total_correct_answers: u16 = row
+            .try_get("TotalCorrectAnswers")
+            .expect("Failed to get TotalCorrectAnswers");
+        let max_correct_answers: u8 = row
+            .try_get("MaxCorrectAnswers")
+            .expect("Failed to get MaxCorrectAnswers");
+
+        result.push((student_id, name, total_correct_answers, max_correct_answers));
+        
     }
 
     let output_filepath = "./uploads/result_file.xlsx";
@@ -132,27 +143,28 @@ async fn excel_search_absent(
     let mut worksheet = workbook.add_worksheet(None).unwrap();
 
     worksheet.write_string(0, 0, "學號", None).unwrap();
-    worksheet.write_string(0, 1, "缺考/請假", None).unwrap();
-    worksheet.write_string(0, 2, "考試日期", None).unwrap();
-    worksheet.write_string(0, 3, "考試種類", None).unwrap();
-    worksheet.write_string(0, 4, "備註", None).unwrap();
-    for (i, (student_id, absent_status, exam_date, exam_type, notes)) in
+    worksheet.write_string(0, 1, "姓名", None).unwrap();
+    worksheet.write_string(0, 2, "累計題數", None).unwrap();
+    worksheet.write_string(0, 3, "最高題數", None).unwrap();
+    worksheet.write_string(0, 4, "是否通過", None).unwrap();
+    for (i, (student_id, name, total_correct_answers, max_correct_answers)) in
         result.iter().enumerate()
     {
         worksheet
             .write_string(i as u32 + 1, 0, student_id, None)
             .unwrap();
         worksheet
-            .write_string(i as u32 + 1, 1, absent_status, None)
+            .write_string(i as u32 + 1, 1, &name, None)
             .unwrap();
         worksheet
-            .write_string(i as u32 + 1, 2, &exam_date.to_string(), None)
+            .write_number(i as u32 + 1, 2, *total_correct_answers as f64, None)
             .unwrap();
         worksheet
-            .write_string(i as u32 + 1, 3, exam_type, None)
+            .write_number(i as u32 + 1, 3, *max_correct_answers as f64, None)
             .unwrap();
+        let pass = *total_correct_answers >= 3 || *max_correct_answers >= 2;
         worksheet
-            .write_string(i as u32 + 1, 4, &notes.clone().unwrap_or_default(), None)
+            .write_string(i as u32 + 1, 4, if pass { "通過" } else { "不通過" }, None)
             .unwrap();
     }
 

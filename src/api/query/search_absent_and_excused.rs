@@ -1,4 +1,4 @@
-use super::lib::is_authorization;
+use crate::api::lib::is_authorization;
 use actix_session::Session;
 use actix_web::{post, web, HttpRequest, HttpResponse};
 use serde::{Serialize,Deserialize};
