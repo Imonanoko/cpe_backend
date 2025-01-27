@@ -16,7 +16,8 @@ use api::{
     },
     create::{
         add_exam::add_exam,
-        get_students_info_template::get_students_info_template
+        get_students_info_template::get_students_info_template,
+        mutiple_add_student_info::mutiple_add_student_info,
     },
 };
 #[actix_web::main]
@@ -64,6 +65,7 @@ async fn main() -> Result<(), std::io::Error> {
             .service(excel_search_absent)
             .service(add_exam)
             .service(get_students_info_template)
+            .service(mutiple_add_student_info)
             // .service(create_user) //要創建新使用者在打開
     })
     .bind(format!("{}:{}", ip, port))?
