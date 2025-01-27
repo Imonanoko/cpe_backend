@@ -12,11 +12,12 @@ use api::{
         student_id_search::student_id_search,
         get_exam_session_info::get_exam_session_info,
         search_absent_and_excused::search_absent_and_excused,
-        excel_search_absent::excel_search_absent
+        excel_search_absent::excel_search_absent,
     },
     create::{
         add_exam::add_exam,
-    }
+        get_students_info_template::get_students_info_template
+    },
 };
 #[actix_web::main]
 async fn main() -> Result<(), std::io::Error> {
@@ -62,6 +63,7 @@ async fn main() -> Result<(), std::io::Error> {
             .service(search_absent_and_excused)
             .service(excel_search_absent)
             .service(add_exam)
+            .service(get_students_info_template)
             // .service(create_user) //要創建新使用者在打開
     })
     .bind(format!("{}:{}", ip, port))?
