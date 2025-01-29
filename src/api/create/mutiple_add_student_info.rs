@@ -21,7 +21,6 @@ pub async fn mutiple_add_student_info(
     }
     let temp_filepath = "./uploads/students_info.xlsx";
     //儲存上傳的檔案
-    //儲存上傳的檔案
     while let Some(Ok(field)) = payload.next().await {
         let content_disposition = field.content_disposition();
         if let Some(filename) = content_disposition.and_then(|cd| cd.get_filename()) {
