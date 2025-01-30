@@ -7,7 +7,6 @@ async fn get_exam_score_template(
     req: HttpRequest,
     session: Session
 ) -> HttpResponse {
-    println!("get_exam_score_template");
     if !is_authorization(req, session){
         return HttpResponse::Unauthorized().body("Session 無效或過期，或是無效的 CSRF Token");
     }

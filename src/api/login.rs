@@ -29,7 +29,6 @@ async fn login(
             // 生成 CSRF Token 並存入會話
             let csrf_token = generate_csrf_token();
             session.insert("csrf_token", &csrf_token).unwrap();
-            println!("登入成功");
             HttpResponse::Ok()
                 .insert_header(("X-CSRF-Token", csrf_token)) // 將 Token 放入回應頭
                 .body("Login successful!")

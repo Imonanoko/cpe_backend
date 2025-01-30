@@ -86,7 +86,7 @@ pub async fn mutiple_add_student_info(
                 }
             }
             None => {
-                return HttpResponse::BadRequest().body("學號欄位不能為空");
+                return HttpResponse::InternalServerError().body("server讀取excel錯誤");
             }
         };
         let name = match row.get(1) {
@@ -98,7 +98,7 @@ pub async fn mutiple_add_student_info(
                 }
             }
             None => {
-                return HttpResponse::BadRequest().body("姓名欄位不能為空");
+                return HttpResponse::InternalServerError().body("server讀取excel錯誤");
             }
         };
         //之後記得改成動態調整，因為資料庫可能會出現第4個狀態(先讀資料庫在做匹配)
@@ -116,7 +116,7 @@ pub async fn mutiple_add_student_info(
                 }
             },
             None => {
-                return HttpResponse::BadRequest().body("註冊狀況欄位不能為空");
+                return HttpResponse::InternalServerError().body("server讀取excel錯誤");
             }
         };
         //之後記得改成動態調整，因為資料庫可能會出現第4個屬性(先讀資料庫在做匹配)
@@ -134,13 +134,13 @@ pub async fn mutiple_add_student_info(
                 }
             },
             None => {
-                return HttpResponse::BadRequest().body("學生屬性欄位不能為空");
+                return HttpResponse::InternalServerError().body("server讀取excel錯誤");
             }
         };
         let note = match row.get(4) {
             Some(note) => note.get_string().unwrap_or(""),
             None => {
-                 ""
+                return HttpResponse::InternalServerError().body("server讀取excel錯誤");
             }
         };
         match sqlx::query(query)
