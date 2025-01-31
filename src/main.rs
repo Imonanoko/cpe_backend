@@ -20,6 +20,7 @@ use api::{
         mutiple_add_student_info::mutiple_add_student_info,
         get_exam_score_template::get_exam_score_template,
         mutiple_add_exam_score::mutiple_add_exam_score,
+        single_add_student::single_add_student
     },
 };
 #[actix_web::main]
@@ -70,6 +71,7 @@ async fn main() -> Result<(), std::io::Error> {
             .service(mutiple_add_student_info)
             .service(get_exam_score_template)
             .service(mutiple_add_exam_score)
+            .service(single_add_student)
             // .service(create_user) //要創建新使用者在打開
     })
     .bind(format!("{}:{}", ip, port))?
