@@ -41,7 +41,7 @@ impl StudentAttribute {
     }
 }
 #[derive(Deserialize, Debug)]
-struct AddExam {
+struct AddStudent {
     #[serde(rename = "studentID")]
     student_id: String,
     name: String,
@@ -53,13 +53,16 @@ struct AddExam {
 }
 #[post("/api/single_add_student")]
 async fn single_add_student(
-    data: web::Json<AddExam>,
+    data: web::Json<AddStudent>,
     req: HttpRequest,
     session: Session,
     db_pool: web::Data<MySqlPool>,
 ) -> HttpResponse {
     if !is_authorization(req, session) {
         return HttpResponse::Unauthorized().body("Session 無效或過期，或是無效的 CSRF Token");
+    }
+    if data.notes.len() > 255 {
+        return HttpResponse::BadRequest().body("備註最多255字");
     }
     let query = r#"
         INSERT INTO StudentInfo (
