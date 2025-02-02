@@ -23,6 +23,9 @@ use api::{
         single_add_student::single_add_student,
         single_add_exam_score::single_add_exam_score,
     },
+    modify::{
+        modify_student_info::modify_student_info,
+    }
 };
 #[actix_web::main]
 async fn main() -> Result<(), std::io::Error> {
@@ -74,6 +77,7 @@ async fn main() -> Result<(), std::io::Error> {
             .service(mutiple_add_exam_score)
             .service(single_add_student)
             .service(single_add_exam_score)
+            .service(modify_student_info)
             // .service(create_user) //要創建新使用者在打開
     })
     .bind(format!("{}:{}", ip, port))?

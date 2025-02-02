@@ -9,6 +9,7 @@ use chrono::NaiveDate;
 #[derive(Deserialize)]
 struct FromData {
     student_id: String,
+    need_exam_attendance: bool,
 }
 #[derive(Serialize, Debug)]
 struct QueryResult {
@@ -38,10 +39,10 @@ async fn student_id_search(
     session: Session,
     db_pool: web::Data<MySqlPool>,
 ) -> HttpResponse {
-    if !is_authorization(req, session) {
+    if !is_authorization(req, session.clone()) {
         return HttpResponse::Unauthorized().body("Session 無效或過期，或是無效的 CSRF Token");
     }
-    let student_id = from_data.student_id.clone();
+    let student_id = from_data.student_id.to_ascii_uppercase().clone();
     //查詢學生資料
     let query = r#"
     SELECT 
@@ -72,7 +73,7 @@ async fn student_id_search(
     {
         Ok(info) => info,
         Err(sqlx::Error::RowNotFound) => {
-            return HttpResponse::NotFound().body("學號不存在");
+            return HttpResponse::NotFound().body("此學號不存在");
         }
         Err(e) => {
             println!("查詢學號時發生錯誤: {}", e);
@@ -89,6 +90,14 @@ async fn student_id_search(
         notes: info.try_get(6).unwrap(),
         exam_attendance: Vec::new()
     };
+    if !from_data.need_exam_attendance {
+        session.insert("modify_student_id", &result.student_id).unwrap();
+        session.insert("modify_name", &result.name).unwrap();
+        session.insert("modify_enrollment_status", &result.enrollment_status).unwrap();
+        session.insert("modify_student_attribute", &result.student_attribute).unwrap();
+        session.insert("modify_notes", &result.notes).unwrap();
+        return HttpResponse::Ok().json(result);
+    }
     //查詢此學生的考試紀錄
     let query = r#"
         SELECT
