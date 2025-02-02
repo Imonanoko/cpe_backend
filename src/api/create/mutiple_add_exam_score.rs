@@ -3,7 +3,7 @@ use actix_session::Session;
 use actix_multipart::Multipart;
 use sqlx::MySqlPool;
 use sqlx::Row;
-use crate::api::lib::is_authorization;
+use crate::api::lib::{is_authorization, update_student_status};
 use std::fs::File;
 use std::io::Write;
 use calamine::DataType;
@@ -181,7 +181,16 @@ async fn mutiple_add_exam_score(
                 .execute(db_pool.get_ref())
                 .await
             {
-                Ok(_) => (),
+                Ok(_) => {
+                    match update_student_status(db_pool.clone(), student_id.clone()).await {
+                        Ok(()) => {
+                            println!("學生狀態更新成功");
+                        }
+                        Err(e) => {
+                            println!("學生狀態更新失敗: {}", e);
+                        }
+                    }
+                },
                 Err(sqlx::Error::Database(err)) if err.is_unique_violation() => {
                     // 已經新增過的場次就跳過該筆資料
                     continue; 

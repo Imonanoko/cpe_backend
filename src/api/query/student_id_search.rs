@@ -130,6 +130,6 @@ async fn student_id_search(
         });
     }
     
-    // println!("result: {:#?}", result);
+    println!("result: {:#?}", result);
     HttpResponse::Ok().json(result)
 }

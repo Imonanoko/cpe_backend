@@ -58,7 +58,7 @@ pub async fn mutiple_add_student_info(
         }
     };
     let header_row = range.rows().next().unwrap();
-    let expected_headers = vec!["學號", "姓名", "註冊狀況", "學生屬性", "備註"];
+    let expected_headers = vec!["學號", "姓名", "註冊狀況(只能填在學、休學、退學)", "學生屬性(只能填本系、外系、外校)", "備註"];
     let actual_headers: Vec<String> = header_row.iter()
     .map(|cell| cell.get_string().unwrap_or("").to_string())
     .collect();

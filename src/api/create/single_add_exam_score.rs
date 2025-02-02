@@ -1,6 +1,6 @@
 use actix_web::{post, web, HttpResponse, HttpRequest};
 use actix_session::Session;
-use crate::api::lib::is_authorization;
+use crate::api::lib::{is_authorization,update_student_status};
 use serde::Deserialize;
 use sqlx::MySqlPool;
 use sqlx::Row;
@@ -92,7 +92,16 @@ async fn single_add_exam_score(
         .execute(db_pool.get_ref())
         .await
     {
-        Ok(_) => (),
+        Ok(_) => {
+            match update_student_status(db_pool, id).await {
+                Ok(()) => {
+                    println!("學生狀態更新成功");
+                }
+                Err(e) => {
+                    println!("學生狀態更新失敗: {}", e);
+                }
+            }
+        },
         Err(sqlx::Error::Database(err)) if err.is_unique_violation() => {
             return HttpResponse::BadRequest().body("此場次的學號已經被新增過了，欲新增此成績請使用修改功能。");
         }
