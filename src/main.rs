@@ -13,6 +13,7 @@ use api::{
         get_exam_session_info::get_exam_session_info,
         search_absent_and_excused::search_absent_and_excused,
         excel_search_absent::excel_search_absent,
+        query_exam_info::query_exam_info,
     },
     create::{
         add_exam::add_exam,
@@ -25,6 +26,7 @@ use api::{
     },
     modify::{
         modify_student_info::modify_student_info,
+        modify_exam_info::modify_exam_info,
     }
 };
 #[actix_web::main]
@@ -78,6 +80,8 @@ async fn main() -> Result<(), std::io::Error> {
             .service(single_add_student)
             .service(single_add_exam_score)
             .service(modify_student_info)
+            .service(query_exam_info)
+            .service(modify_exam_info)
             // .service(create_user) //要創建新使用者在打開
     })
     .bind(format!("{}:{}", ip, port))?

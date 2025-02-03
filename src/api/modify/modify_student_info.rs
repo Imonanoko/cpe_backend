@@ -16,7 +16,7 @@ struct ModifyData {
 async fn modify_student_info(
     from_data: web::Json<ModifyData>,
     req: HttpRequest,
-    session: Session,
+    mut session: Session,
     db_pool: web::Data<MySqlPool>,
 ) -> HttpResponse {
     if !is_authorization(req, session.clone()) {
@@ -113,6 +113,7 @@ async fn modify_student_info(
 
     // 如果沒有任何欄位有變化，就直接回傳
     if set_clauses.is_empty() {
+        clean_session(&mut session);
         return HttpResponse::Ok().body("無更新內容");
     }
 
@@ -128,11 +129,19 @@ async fn modify_student_info(
         .await;
 
     match result {
-        Ok(res) => {
+        Ok(_res) => {
+            clean_session(&mut session);
             HttpResponse::Ok().body("更新成功")
         },
-        Err(e) => {
+        Err(_e) => {
             HttpResponse::InternalServerError().body("更新失敗")
         }
     }
+}
+fn clean_session(session: &mut Session) {
+    session.remove("modify_student_id");
+    session.remove("modify_name");
+    session.remove("modify_enrollment_status");
+    session.remove("modify_student_attribute");
+    session.remove("modify_notes");
 }
