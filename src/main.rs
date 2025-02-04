@@ -14,6 +14,7 @@ use api::{
         search_absent_and_excused::search_absent_and_excused,
         excel_search_absent::excel_search_absent,
         query_exam_info::query_exam_info,
+        query_score_info::query_score_info
     },
     create::{
         add_exam::add_exam,
@@ -82,6 +83,7 @@ async fn main() -> Result<(), std::io::Error> {
             .service(modify_student_info)
             .service(query_exam_info)
             .service(modify_exam_info)
+            .service(query_score_info)
             // .service(create_user) //要創建新使用者在打開
     })
     .bind(format!("{}:{}", ip, port))?
