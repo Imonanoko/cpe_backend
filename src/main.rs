@@ -28,6 +28,7 @@ use api::{
     modify::{
         modify_student_info::modify_student_info,
         modify_exam_info::modify_exam_info,
+        modify_exam_score::modify_exam_score
     }
 };
 #[actix_web::main]
@@ -84,6 +85,7 @@ async fn main() -> Result<(), std::io::Error> {
             .service(query_exam_info)
             .service(modify_exam_info)
             .service(query_score_info)
+            .service(modify_exam_score)
             // .service(create_user) //要創建新使用者在打開
     })
     .bind(format!("{}:{}", ip, port))?

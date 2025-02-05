@@ -90,7 +90,7 @@ async fn query_score_info(
         worksheet.write_string(row, 1, status, None).unwrap();
 
         // 答對題數
-        worksheet.write_string(row, 2, &record.CorrectAnswersCount.map(|x| x.to_string()).unwrap(), None).unwrap();
+        worksheet.write_number(row, 2, record.CorrectAnswersCount.unwrap() as f64, None).unwrap();
 
         // 備註
         worksheet.write_string(row, 3, &<std::option::Option<std::string::String> as Clone>::clone(&record.Notes).unwrap_or_default(), None).unwrap();
