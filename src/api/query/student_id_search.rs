@@ -138,7 +138,5 @@ async fn student_id_search(
             exam_notes:exam_attendance_row.try_get(6).expect("無法讀取 exam_notes"),
         });
     }
-    
-    println!("result: {:#?}", result);
     HttpResponse::Ok().json(result)
 }
