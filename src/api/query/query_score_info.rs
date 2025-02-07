@@ -1,7 +1,7 @@
 use crate::api::lib::is_authorization;
 use actix_session::Session;
 use actix_web::{post, web, HttpRequest, HttpResponse};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sqlx::MySqlPool;
 use chrono::NaiveDate;
 use xlsxwriter::Workbook;
@@ -11,6 +11,8 @@ enum CRUD {
     Update,
     #[serde(rename = "query")]
     Query,
+    #[serde(rename = "delete")]
+    Delete,
 }
 #[derive(Deserialize)]
 struct QueryScoreInfoForm {
@@ -18,11 +20,18 @@ struct QueryScoreInfoForm {
     exam_type: String,
     crud_type:CRUD,
 }
+#[derive(Serialize)]
+struct ScoreInfo {
+    student_id: String,
+    status:String,
+    correct_number: Option<i32>,
+    notes: Option<String>,
+}
 #[post("/api/query_score_info")]
 async fn query_score_info(
     pool: web::Data<MySqlPool>,
     req: HttpRequest,
-    mut session: Session,
+    session: Session,
     data: web::Json<QueryScoreInfoForm>,
 ) -> HttpResponse {
     if !is_authorization(req, session.clone()) {
@@ -60,6 +69,28 @@ async fn query_score_info(
         Ok(records) => records,
         Err(_) => return HttpResponse::InternalServerError().body("查詢考試成績資料失敗"),
     };
+
+    if let CRUD::Delete = data.crud_type {
+        let mut score_info: Vec<ScoreInfo> = Vec::new();
+        for record in exam_attendance_records.iter() {
+            let status = match (record.IsAbsent, record.IsExcused) {
+                (Some(1), Some(1)) => "請假",
+                (Some(1), Some(0)) => "缺考",
+                _ => "無",       // 其他情況
+            };
+            score_info.push(ScoreInfo{
+                student_id:record.StudentID.clone(),
+                status:status.to_string(),
+                correct_number:record.CorrectAnswersCount ,
+                notes: record.Notes.clone(),
+            });
+        }
+        if let Err(_) = session.insert("delete_exam_session_sn", exam_session_sn) {
+            return HttpResponse::InternalServerError().body("無法存入 session");
+        }
+        return HttpResponse::Ok().json(score_info);
+    };
+
     let output_filepath = "./uploads/exam_score_excel.xlsx";
     let workbook = Workbook::new(output_filepath).expect("Failed to create workbook");
     let mut worksheet = workbook.add_worksheet(None).unwrap();

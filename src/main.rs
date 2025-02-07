@@ -33,6 +33,7 @@ use api::{
     delete::{
         delete_student_info::delete_student_info,
         delete_exam_info::delete_exam_info,
+        delete_exam_score::delete_exam_score,
     }
 };
 #[actix_web::main]
@@ -92,6 +93,7 @@ async fn main() -> Result<(), std::io::Error> {
             .service(modify_exam_score)
             .service(delete_student_info)
             .service(delete_exam_info)
+            .service(delete_exam_score)
             // .service(create_user) //要創建新使用者在打開
     })
     .bind(format!("{}:{}", ip, port))?
