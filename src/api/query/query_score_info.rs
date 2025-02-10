@@ -86,7 +86,7 @@ async fn query_score_info(
             });
         }
         if let Err(_) = session.insert("delete_exam_session_sn", exam_session_sn) {
-            return HttpResponse::InternalServerError().body("無法存入 session");
+            return HttpResponse::InternalServerError().body("無法存入 session，請再試一次");
         }
         return HttpResponse::Ok().json(score_info);
     };
