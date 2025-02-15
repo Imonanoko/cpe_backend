@@ -3,6 +3,9 @@ use actix_session::{storage::RedisSessionStore, SessionMiddleware, config::Persi
 use actix_web::{web::Data, App, HttpServer, cookie::{Key, time::Duration}};
 use sqlx::mysql::MySqlPool;
 mod api;
+use rustls::{Certificate, PrivateKey, ServerConfig};
+use std::fs::File;
+use std::io::BufReader;
 // use api::create_user::create_user;
 use api::{
     login::login,
@@ -36,6 +39,29 @@ use api::{
         delete_exam_score::delete_exam_score,
     }
 };
+
+/// 從指定路徑讀取憑證（.pem 格式）
+fn load_certs(path: &str) -> Vec<Certificate> {
+    let cert_file = File::open(path).expect("無法開啟憑證檔案");
+    let mut reader = BufReader::new(cert_file);
+    rustls_pemfile::certs(&mut reader)
+        .expect("無法讀取憑證")
+        .into_iter()
+        .map(Certificate)
+        .collect()
+}
+
+/// 從指定路徑讀取私鑰（.pem 格式）
+fn load_private_key(path: &str) -> PrivateKey {
+    let key_file = File::open(path).expect("無法開啟私鑰檔案");
+    let mut reader = BufReader::new(key_file);
+    let keys = rustls_pemfile::pkcs8_private_keys(&mut reader)
+        .expect("無法讀取私鑰");
+    if keys.is_empty() {
+        panic!("找不到私鑰");
+    }
+    PrivateKey(keys[0].clone())
+}
 #[actix_web::main]
 async fn main() -> Result<(), std::io::Error> {
     dotenv::dotenv().ok();
@@ -43,18 +69,32 @@ async fn main() -> Result<(), std::io::Error> {
     let redis_url = std::env::var("REDIS_URL").expect("REDIS_URL must be set");
     let ip = std::env::var("IP").expect("IP must be set.");
     let port = std::env::var("PORT").expect("PORT must be set.");
+    let cert_path = std::env::var("CERT").expect("CERT_PATH must be set.");
+    let key_path = std::env::var("KEY").expect("KEY_PATH must be set.");
     let redis_store = RedisSessionStore::new(&redis_url)
         .await
         .expect("Failed to connect to Redis");
     let db_pool = MySqlPool::connect(&datacase_url)
         .await
         .expect("Failed to connect to the database.");
-    println!("Starting server at http://{}:{}...", ip, port);
+    
+    // 讀取證書與私鑰檔案（請確保 cert.pem 與 key.pem 存在）
+    let certs = load_certs(&cert_path);
+    let key = load_private_key(&key_path);
+
+    // 建立 Rustls 的 ServerConfig
+    let config = ServerConfig::builder()
+        .with_safe_defaults()
+        .with_no_client_auth()
+        .with_single_cert(certs, key)
+        .expect("建立 rustls config 失敗");
+
+    println!("Server is running at https://{}:{}...", ip, port);
     HttpServer::new(move || {
         App::new()
             .wrap(
                 Cors::default()
-                    .allowed_origin("http://140.128.101.24:8080") // 允許前端的域名
+                    .allowed_origin("https://140.128.101.24:8080") // 允許前端的域名
                     .allowed_methods(vec!["GET", "POST", "OPTIONS"]) // 允許的方法
                     .allowed_headers(vec!["Content-Type", "Authorization", "X-CSRF-Token"]) // 允許的請求頭
                     .expose_headers(vec!["X-CSRF-Token"]) //沒有允許暴露的話前端是無法讀取的
@@ -63,7 +103,7 @@ async fn main() -> Result<(), std::io::Error> {
             .wrap(
                 SessionMiddleware::builder(redis_store.clone(), get_secret_key())
                     .cookie_http_only(true)
-                    .cookie_secure(false) //限制https
+                    .cookie_secure(true) //限制https
                     .cookie_same_site(actix_web::cookie::SameSite::Lax)
                     .session_lifecycle(
                         PersistentSession::default()
@@ -96,7 +136,7 @@ async fn main() -> Result<(), std::io::Error> {
             .service(delete_exam_score)
             // .service(create_user) //要創建新使用者在打開
     })
-    .bind(format!("{}:{}", ip, port))?
+    .bind_rustls(format!("{}:{}", ip, port), config)?
     .run()
     .await
 }
