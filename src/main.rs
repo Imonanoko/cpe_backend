@@ -17,7 +17,8 @@ use api::{
         search_absent_and_excused::search_absent_and_excused,
         excel_search_absent::excel_search_absent,
         query_exam_info::query_exam_info,
-        query_score_info::query_score_info
+        query_score_info::query_score_info,
+        unclaimed_scholarship::unclaimed_scholarship
     },
     create::{
         add_exam::add_exam,
@@ -134,6 +135,7 @@ async fn main() -> Result<(), std::io::Error> {
             .service(delete_student_info)
             .service(delete_exam_info)
             .service(delete_exam_score)
+            .service(unclaimed_scholarship)
             // .service(create_user) //要創建新使用者在打開
     })
     .bind_rustls(format!("{}:{}", ip, port), config)?
