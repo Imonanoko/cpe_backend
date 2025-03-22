@@ -36,6 +36,17 @@ CREATE TABLE StudentInfo (
     FOREIGN KEY (StudentAttribute_SN) REFERENCES StudentAttributes(SN) -- 外來鍵約束
 );
 ```
+## 獎學金領取紀錄(ScholarshipRecord)
+```sql
+CREATE TABLE ScholarshipRecord (
+    StudentID VARCHAR(20) PRIMARY KEY, -- 主鍵 + 外來鍵（保證一位學生最多一筆）
+    CorrectAnswersCount INT NOT NULL, -- 答對題數（根據這個發獎）
+    ReceivedDate DATE NOT NULL, -- 領獎日期
+    Notes VARCHAR(255), -- 備註欄（選填）
+    FOREIGN KEY (StudentID) REFERENCES StudentInfo(StudentID) ON DELETE CASCADE
+);
+```
+
 ## 考試場次基本資料表 (ExamSessions)
 ```sql
 CREATE TABLE ExamSessions (
