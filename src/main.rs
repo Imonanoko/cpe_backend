@@ -28,6 +28,8 @@ use api::{
         mutiple_add_exam_score::mutiple_add_exam_score,
         single_add_student::single_add_student,
         single_add_exam_score::single_add_exam_score,
+        get_scholarship_template::get_scholarship_template,
+        mutiple_add_scholarship::mutiple_add_scholarship,
     },
     modify::{
         modify_student_info::modify_student_info,
@@ -136,6 +138,8 @@ async fn main() -> Result<(), std::io::Error> {
             .service(delete_exam_info)
             .service(delete_exam_score)
             .service(unclaimed_scholarship)
+            .service(get_scholarship_template)
+            .service(mutiple_add_scholarship)
             // .service(create_user) //要創建新使用者在打開
     })
     .bind_rustls(format!("{}:{}", ip, port), config)?
