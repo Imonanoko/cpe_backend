@@ -6,3 +6,4 @@ pub mod excel_search_absent;
 pub mod query_exam_info;
 pub mod query_score_info;
 pub mod unclaimed_scholarship;
+pub mod unclaimed_scholarship_json;
