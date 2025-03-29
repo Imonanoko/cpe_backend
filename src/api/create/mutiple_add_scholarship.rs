@@ -151,19 +151,43 @@ async fn mutiple_add_scholarship(
                     .body(format!("第 {} 列 缺少領獎日期欄位", line_num));
             }
         };
+        let amount = match row.get(3) {
+            Some(cell) => match cell.get_float() {
+                Some(f) => {
+                    if f >= 0.0 {
+                        f
+                    } else {
+                        tx.rollback().await.ok();
+                        return HttpResponse::BadRequest()
+                            .body(format!("第 {} 列 金額不得為負：{}", line_num, f));
+                    }
+                }
+                None => {
+                    tx.rollback().await.ok();
+                    return HttpResponse::BadRequest()
+                        .body(format!("第 {} 列 領取金額格式錯誤（非數值）", line_num));
+                }
+            },
+            None => {
+                tx.rollback().await.ok();
+                return HttpResponse::BadRequest()
+                    .body(format!("第 {} 列 缺少領取金額欄位", line_num));
+            }
+        };
 
         let notes = row.get(3).and_then(|c| c.get_string()).unwrap_or("").to_string();
 
         // 寫入 DB（若重複，回滾整批）
         let query = r#"
-            INSERT INTO ScholarshipRecord (StudentID, CorrectAnswersCount, ReceivedDate, Notes)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO ScholarshipRecord (StudentID, CorrectAnswersCount, ReceivedDate, ScholarshipAmount, Notes)
+            VALUES (?, ?, ?, ?, ?)
         "#;
 
         match sqlx::query(query)
             .bind(&student_id)
             .bind(correct_count)
             .bind(received_date)
+            .bind(amount)
             .bind(&notes)
             .execute(&mut *tx)
             .await
@@ -172,7 +196,7 @@ async fn mutiple_add_scholarship(
             Err(sqlx::Error::Database(e)) if e.is_unique_violation() => {
                 tx.rollback().await.ok();
                 return HttpResponse::BadRequest()
-                    .body(format!("第 {} 列的學生 {} 已存在於資料表中", line_num, student_id));
+                    .body(format!("第 {} 列的學生， 學號:{} 已存在於資料表中", line_num, student_id));
             }
             Err(e) => {
                 tx.rollback().await.ok();
