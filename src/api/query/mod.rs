@@ -7,3 +7,5 @@ pub mod query_exam_info;
 pub mod query_score_info;
 pub mod unclaimed_scholarship;
 pub mod unclaimed_scholarship_json;
+pub mod claimed_scholarship_json;
+pub mod claimed_scholarship_excel;
