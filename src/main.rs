@@ -43,6 +43,7 @@ use api::{
         delete_student_info::delete_student_info,
         delete_exam_info::delete_exam_info,
         delete_exam_score::delete_exam_score,
+        delete_scholarship_records::delete_scholarship_records,
     }
 };
 
@@ -146,6 +147,7 @@ async fn main() -> Result<(), std::io::Error> {
             .service(unclaimed_scholarship_json)
             .service(claimed_scholarship_json)
             .service(claimed_scholarship_excel)
+            .service(delete_scholarship_records)
             // .service(create_user) //要創建新使用者在打開
     })
     .bind_rustls(format!("{}:{}", ip, port), config)?
