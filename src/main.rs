@@ -18,10 +18,8 @@ use api::{
         excel_search_absent::excel_search_absent,
         query_exam_info::query_exam_info,
         query_score_info::query_score_info,
-        unclaimed_scholarship::unclaimed_scholarship,
-        unclaimed_scholarship_json::unclaimed_scholarship_json,
-        claimed_scholarship_json::claimed_scholarship_json,
-        claimed_scholarship_excel::claimed_scholarship_excel,
+        scholarship_query_json::query_scholarship_json,
+        query_scholarship_excel::query_scholarship_excel,
     },
     create::{
         add_exam::add_exam,
@@ -141,13 +139,11 @@ async fn main() -> Result<(), std::io::Error> {
             .service(delete_student_info)
             .service(delete_exam_info)
             .service(delete_exam_score)
-            .service(unclaimed_scholarship)
             .service(get_scholarship_template)
             .service(mutiple_add_scholarship)
-            .service(unclaimed_scholarship_json)
-            .service(claimed_scholarship_json)
-            .service(claimed_scholarship_excel)
             .service(delete_scholarship_records)
+            .service(query_scholarship_json)
+            .service(query_scholarship_excel)
             // .service(create_user) //要創建新使用者在打開
     })
     .bind_rustls(format!("{}:{}", ip, port), config)?
