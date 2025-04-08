@@ -1,7 +1,7 @@
 use actix_session::Session;
 use actix_web::{post, web, HttpRequest, HttpResponse};
 use sqlx::MySqlPool;
-use crate::api::lib::is_authorization;
+use crate::api::lib::{is_authorization, update_student_status};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -41,6 +41,7 @@ async fn delete_exam_score(
         Ok(tx) => tx,
         Err(_) => return HttpResponse::InternalServerError().body("無法啟動資料庫交易"),
     };
+    let mut update_list = Vec::new();
     let query = r#"
         DELETE FROM ExamAttendance 
         WHERE ExamSession_SN = (?) 
@@ -59,6 +60,7 @@ async fn delete_exam_score(
         {
             Ok(result) => {
                 if result.rows_affected() > 0 {
+                    update_list.push(id.clone());
                     delete_number += 1;
                 }
             }
@@ -72,9 +74,17 @@ async fn delete_exam_score(
 
     // 提交交易
     match transaction.commit().await {
-        Ok(_) => HttpResponse::Ok().body(format!("成功刪除 {} 筆記錄", delete_number)),
+        Ok(_) => {
+            for student_id in update_list {
+                if let Err(e) = update_student_status(db_pool.clone(), student_id).await {
+                    println!("更新學生狀態失敗: {}", e);
+                }
+            }
+            HttpResponse::Ok().body(format!("成功刪除 {} 筆記錄", delete_number))
+        }
         Err(_) => {
             HttpResponse::InternalServerError().body("刪除失敗請重新提交刪除")
         }
     }
+    
 }

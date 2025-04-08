@@ -1,18 +1,18 @@
-use actix_web::{post, web, HttpResponse, HttpRequest};
+use actix_web::{post, web, HttpRequest, HttpResponse};
 use actix_session::Session;
 use actix_multipart::Multipart;
-use sqlx::MySqlPool;
-use sqlx::Row;
-use crate::api::lib::{is_authorization, update_student_status};
+use sqlx::{MySqlPool, Row};
+use crate::api::lib::is_authorization;
+use crate::api::lib::update_student_status;
 use std::fs::File;
 use std::io::Write;
-use calamine::DataType;
-use calamine::Reader;
-use futures_util::StreamExt as _;
+use calamine::{Reader, DataType,Data as calamineData};
 use chrono::NaiveDate;
+use futures_util::StreamExt as _;
+use std::collections::HashSet;
 
 #[post("/api/mutiple_add_exam_score")]
-async fn mutiple_add_exam_score(
+pub async fn mutiple_add_exam_score(
     mut payload: Multipart,
     req: HttpRequest,
     session: Session,
@@ -21,191 +21,186 @@ async fn mutiple_add_exam_score(
     if !is_authorization(req, session) {
         return HttpResponse::Unauthorized().body("Session 無效或過期，或是無效的 CSRF Token");
     }
-    let temp_filepath = "./uploads/exam_score.xlsx";
-    //儲存上傳的檔案
-    while let Some(Ok(field)) = payload.next().await {
-        let content_disposition = field.content_disposition();
-        if let Some(filename) = content_disposition.and_then(|cd| cd.get_filename()) {
-            let file_ext = std::path::Path::new(filename)
-                .extension()
-                .and_then(|s| s.to_str());
-            if file_ext != Some("xlsx") {
-                return HttpResponse::BadRequest().body("請上傳xlsx檔案");
+
+    let filepath = "./uploads/exam_score.xlsx";
+
+    // 儲存上傳的檔案
+    while let Some(Ok(mut field)) = payload.next().await {
+        if let Some(filename) = field.content_disposition().and_then(|cd| cd.get_filename()) {
+            if !filename.ends_with(".xlsx") {
+                return HttpResponse::BadRequest().body("請上傳 .xlsx 檔案");
             }
-            let mut f = File::create(temp_filepath).expect("Failed to create file");
-            let mut field_stream = field;
-            while let Some(chunk) = field_stream.next().await {
-                let data = chunk.expect("Error reading chunk");
-                f.write_all(&data).expect("Error writing chunk");
+
+            let mut f = File::create(filepath).expect("create file failed");
+            while let Some(chunk) = field.next().await {
+                let data = chunk.expect("chunk error");
+                f.write_all(&data).expect("write chunk error");
             }
         }
     }
-    if !std::path::Path::new(temp_filepath).exists() {
-        println!("File does not exist: {}", temp_filepath);
-        return HttpResponse::InternalServerError().body("Failed to process file");
-    }
-    //解析上傳的檔案，取得學號的list
-    let mut workbook = match calamine::open_workbook_auto(temp_filepath) {
+
+    let mut workbook = match calamine::open_workbook_auto(filepath) {
         Ok(wb) => wb,
-        Err(err) => {
-            println!("Failed to open Excel file: {}", err);
-            return HttpResponse::InternalServerError().body("無效的 Excel file");
+        Err(e) => {
+            println!("開啟 Excel 錯誤: {}", e);
+            return HttpResponse::InternalServerError().body("開啟 Excel 檔案失敗");
         }
     };
+
     let range = match workbook.worksheet_range("工作表1") {
-        Ok(range) => range,
-        Err(err) => {
-            println!("Error reading sheet: {}", err);
-            return HttpResponse::BadRequest().body("請將需要查詢的資料放入工作表1");
+        Ok(r) => r,
+        Err(_) => return HttpResponse::BadRequest().body("請確認檔案中有名為 '工作表1' 的工作表"),
+    };
+
+    let mut exam_sn = Vec::new();
+    let headers = range.rows().next().unwrap();
+    for cell in headers.iter().skip(1).step_by(2) {
+        let Some(info) = cell.get_string() else {
+            return HttpResponse::BadRequest().body("欄位標題格式錯誤");
+        };
+        let parts: Vec<&str> = info.split(',').collect();
+        if parts.len() != 2 {
+            return HttpResponse::BadRequest().body("請使用 'YYYY-MM-DD,官辦/自辦' 作為欄位標題格式");
+        }
+
+        let date = match NaiveDate::parse_from_str(parts[0], "%Y-%m-%d") {
+            Ok(d) => d,
+            Err(_) => return HttpResponse::BadRequest().body("日期格式錯誤，請使用 YYYY-MM-DD"),
+        };
+
+        let exam_type = parts[1];
+        if exam_type != "官辦" && exam_type != "自辦" {
+            return HttpResponse::BadRequest().body("考試類型需為 '官辦' 或 '自辦'");
+        }
+
+        let row = match sqlx::query("SELECT SN FROM ExamSessions WHERE ExamDate = ? AND ExamType = ?")
+            .bind(date)
+            .bind(exam_type)
+            .fetch_one(db_pool.get_ref())
+            .await
+        {
+            Ok(r) => r,
+            Err(_) => {
+                return HttpResponse::BadRequest().body(format!("找不到場次: {},{}", parts[0], parts[1]));
+            }
+        };
+        exam_sn.push(row.get::<i32, _>("SN"));
+    }
+
+    let mut student_ids_in_excel = HashSet::new();
+    for row in range.rows().skip(1) {
+        if let Some(cell) = row.get(0) {
+            if let Some(id) = cell.get_string() {
+                student_ids_in_excel.insert(id.to_ascii_uppercase());
+            }
+        }
+    }
+
+    let placeholders = student_ids_in_excel.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let query = format!("SELECT StudentID FROM StudentInfo WHERE StudentID IN ({})", placeholders);
+
+    let mut query_builder = sqlx::query(&query);
+    for id in &student_ids_in_excel {
+        query_builder = query_builder.bind(id);
+    }
+
+    let result = match query_builder.fetch_all(db_pool.get_ref()).await {
+        Ok(rows) => rows.into_iter().map(|r| r.get::<String, _>("StudentID")).collect::<HashSet<_>>(),
+        Err(e) => {
+            println!("查詢學生清單失敗: {}", e);
+            return HttpResponse::InternalServerError().body("查詢學生資料錯誤");
         }
     };
-    let header_row = range.rows().next().unwrap();
-    let length = header_row.len();
-    let mut exam_sn:Vec<i32> = Vec::new();
-    for cell in header_row.iter().skip(1).step_by(2) {
-        match cell.get_string() {
-            Some(value) => {
-                let split = value.split(",").collect::<Vec<&str>>();
-                let date = match NaiveDate::parse_from_str(split[0], "%Y-%m-%d") {
-                    Ok(date) => date,
-                    Err(_) => {
-                        return HttpResponse::BadRequest().body("日期格式錯誤，請將第二欄(column)以後的標題格式改為YYYY-MM-DD,(官辦、自辦)");
-                    }
-                };
-                let exam_type = match split.get(1) {
-                    Some(exam_type) => {
-                        let exam_type_str = exam_type.to_string();
-                        if exam_type_str == "官辦" || exam_type_str == "自辦"{
-                            exam_type_str
-                        }else {
-                            return HttpResponse::BadRequest().body("場次種類格式錯誤，請將偶數欄(column)的標題格式改為YYYY-MM-DD,(官辦、自辦)");
-                        }
-                    }
-                    None => {
-                        return HttpResponse::BadRequest().body("場次種類格式錯誤，請將偶數欄(column)以後的標題格式改為YYYY-MM-DD,(官辦、自辦)");
-                    }
-                };
-                let query = r#"
-                    select SN from ExamSessions where ExamDate= (?) and ExamType= (?);
-                "#;
-                let row = match sqlx::query(query).bind(&date).bind(&exam_type).fetch_one(db_pool.get_ref()).await {
-                    Ok(row) => row,
-                    Err(sqlx::Error::RowNotFound) => {
-                        return HttpResponse::BadRequest().body(format!("日期:{}, 場次種類:{}，找不到該場次的資料。請先新增或檢查該場次的資料", date, exam_type));
-                    }
-                    Err(err) => {
-                        return HttpResponse::InternalServerError().body(format!("Internal server error.: {}", err));
-                    }
-                };
-                exam_sn.push(row.try_get("SN").unwrap());
-            }
-            None => {
-                return HttpResponse::BadRequest().body("標題出現未預期的格式");
-            },
-        };
+
+    let missing_students: Vec<_> = student_ids_in_excel.difference(&result).cloned().collect();
+    if !missing_students.is_empty() {
+        return HttpResponse::BadRequest().json(missing_students);
     }
+
+    // SQL Transaction
+    let mut tx = match db_pool.begin().await {
+        Ok(tx) => tx,
+        Err(e) => {
+            println!("無法開始交易: {}", e);
+            return HttpResponse::InternalServerError().body("系統錯誤");
+        }
+    };
+    let mut update_list = Vec::new();
     for row in range.rows().skip(1) {
-        let student_id = match row.get(0) {
-            Some(id) => {
-                if let Some(id) = id.get_string() {
-                    id.to_ascii_uppercase()
-                }else {
-                    return HttpResponse::BadRequest().body("學號欄位不能為空");
-                }
-            }
-            None => {
-                return HttpResponse::InternalServerError().body("server讀取excel錯誤");
-            }
+        let Some(student_id_raw) = row.get(0) else {
+            return HttpResponse::BadRequest().body("缺少學號");
         };
-        for i in (1..length).step_by(2) {
-            let mut absent = false;
-            let mut excused = false;
-            let mut score = 0;
-            let mut note = String::new();
-            match row.get(i) {
-                Some(cell) => {
-                    if let Some(text) = cell.get_string() {
-                        let trimmed_text = text.trim();
-                        if trimmed_text == "請假" {
-                            absent = true;
-                            excused = true;
-                            score = 0;
-                        } else if trimmed_text == "缺考" {
-                            absent = true;
-                            score = 0;
-                        } else {
-                            return HttpResponse::BadRequest().body(format!(
-                                "無法解析成績: {} (第 {} 欄)，請填入整數(考試題數)或者請假、缺考(備註:有可能是考試題數格式是字串，請改為浮點數)",
-                                trimmed_text, i + 1
-                            ));
+
+        let Some(student_id) = student_id_raw.get_string() else {
+            return HttpResponse::BadRequest().body("學號格式錯誤");
+        };
+        let student_id = student_id.to_ascii_uppercase();
+
+        for i in (1..headers.len()).step_by(2) {
+            let cell = row.get(i);
+            let note = row.get(i + 1).and_then(|c| c.get_string()).unwrap_or("").to_string();
+
+            let (mut is_absent, mut is_excused, mut score) = (false, false, 0);
+
+            match cell {
+                Some(calamineData::String(s)) => {
+                    match s.trim() {
+                        "請假" => { is_absent = true; is_excused = true; }
+                        "缺考" => { is_absent = true; }
+                        other => {
+                            return HttpResponse::BadRequest()
+                                .body(format!("第 {} 欄格式錯誤: {}", i + 1, other));
                         }
-                    } else if let Some(num) = cell.get_float() {
-                        //因為excel填入數字會自動將型別設定為浮點數,所以要轉成整數
-                        if num.fract() == 0.0 {
-                            // 確保數字是整數
-                            score = num as i32;
-                        } else {
-                            return HttpResponse::BadRequest().body(format!(
-                                "成績應為整數，但發現小數: {} (第 {} 欄)",
-                                num, i + 1
-                            ));
-                        }
+                    }
+                }
+                Some(calamineData::Float(f)) => {
+                    if f.fract() == 0.0 {
+                        score = *f as i32;
                     } else {
+                        return HttpResponse::BadRequest()
+                            .body(format!("第 {} 欄成績應為整數", i + 1));
+                    }
+                }
+                _ => continue,
+            }
+
+            let insert = sqlx::query(
+                r#"
+                INSERT INTO ExamAttendance (ExamSession_SN, StudentID, IsAbsent, IsExcused, CorrectAnswersCount, Notes)
+                VALUES (?, ?, ?, ?, ?, ?)
+                "#,
+            )
+            .bind(exam_sn[i / 2])
+            .bind(&student_id)
+            .bind(is_absent)
+            .bind(is_excused)
+            .bind(score)
+            .bind(&note)
+            .execute(&mut *tx)
+            .await;
+
+            if let Err(e) = insert {
+                if let sqlx::Error::Database(db_err) = &e {
+                    if db_err.is_unique_violation() {
                         continue;
                     }
                 }
-                None => {
-                    return HttpResponse::InternalServerError().body("server讀取excel錯誤");
-                }
+                return HttpResponse::InternalServerError().body(format!("寫入資料失敗: {}", e));
+            }else {
+                update_list.push(student_id.clone());
             }
-    
-            // 讀取備註 (下一欄)
-            note = row.get(i + 1)
-                .and_then(|cell| cell.get_string())
-                .unwrap_or("")
-                .to_string();
-    
-            // 插入資料到 ExamAttendance
-            let query = r#"
-                INSERT INTO ExamAttendance (ExamSession_SN, StudentID, IsAbsent, IsExcused, CorrectAnswersCount, Notes)
-                VALUES (?, ?, ?, ?, ?, ?);
-            "#;
             
-            match sqlx::query(query)
-                .bind(&exam_sn[i / 2])  // exam_sn 存的是從 header 解析的 ExamSession_SN
-                .bind(&student_id)
-                .bind(absent)
-                .bind(excused)
-                .bind(score)
-                .bind(&note)
-                .execute(db_pool.get_ref())
-                .await
-            {
-                Ok(_) => {
-                    match update_student_status(db_pool.clone(), student_id.clone()).await {
-                        Ok(()) => {
-                            println!("學生狀態更新成功");
-                        }
-                        Err(e) => {
-                            println!("學生狀態更新失敗: {}", e);
-                        }
-                    }
-                },
-                Err(sqlx::Error::Database(err)) if err.is_unique_violation() => {
-                    // 已經新增過的場次就跳過該筆資料
-                    continue; 
-                }
-                Err(err) => {
-                    return HttpResponse::InternalServerError().body(format!(
-                        "寫入 ExamAttendance 失敗: {}",
-                        err
-                    ));
-                }
-            }
         }
-    
     }
-    
 
-    HttpResponse::Ok().body("成功新增學生資料")
+    if let Err(e) = tx.commit().await {
+        println!("交易提交失敗: {}", e);
+        return HttpResponse::InternalServerError().body("交易失敗");
+    }
+    for student_id in update_list {
+        if let Err(e) = update_student_status(db_pool.clone(), student_id).await {
+            println!("更新學生狀態失敗: {}", e);
+        }
+    }
+    HttpResponse::Ok().body("成功新增學生考試資料")
 }

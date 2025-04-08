@@ -1,4 +1,4 @@
-use crate::api::lib::is_authorization;
+use crate::api::lib::{is_authorization,update_student_status};
 use actix_session::Session;
 use actix_web::{post, web, HttpRequest, HttpResponse};
 use sqlx::MySqlPool;
@@ -154,6 +154,9 @@ pub async fn modify_exam_score(
     
         if let Ok(res) = result {
             if res.rows_affected() > 0 {
+                if let Err(e) = update_student_status(db_pool.clone(), student_id).await {
+                    println!("更新學生狀態失敗: {}", e);
+                }
                 updated_count += 1;
             }
         }
