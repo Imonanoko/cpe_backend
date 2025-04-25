@@ -11,7 +11,23 @@ use sqlx::Row;
 use std::fs::File;
 use std::io::Write;
 use xlsxwriter::Workbook;
+use base64::Engine as _;
+use serde::Serialize;
 
+#[derive(Serialize)]
+struct AbsentResult {
+    student_id: String,
+    absent_status: String,
+    exam_date: String, // NaiveDate 轉為 String 以便序列化
+    exam_type: String,
+    notes: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ApiResponse {
+    results: Vec<AbsentResult>,
+    excel_file: String, // base64 編碼的 Excel 檔案
+}
 #[post("/api/excel_search_absent")]
 async fn excel_search_absent(
     mut payload: Multipart,
@@ -101,7 +117,7 @@ async fn excel_search_absent(
     LIMIT 1;
     "#;
 
-    let mut result: Vec<(String,String, NaiveDate, String, Option<String>)> = Vec::new();
+    let mut results: Vec<AbsentResult> = Vec::new();
     for student_id in student_ids.iter() {
         match sqlx::query(query)
             .bind(student_id)
@@ -115,7 +131,13 @@ async fn excel_search_absent(
                 let exam_date: NaiveDate = row.try_get("ExamDate").expect("Failed to get ExamDate");
                 let exam_type: String = row.try_get("ExamType").expect("Failed to get ExamType");
                 let notes: Option<String> = row.try_get("Notes").expect("Failed to get Notes");
-                result.push((student_id.to_string(), absent_status, exam_date, exam_type, notes));
+                results.push(AbsentResult {
+                    student_id: student_id.to_string(),
+                    absent_status,
+                    exam_date: exam_date.to_string(), // 轉為 String
+                    exam_type,
+                    notes,
+                });
             }
             Ok(None) => {
                 ()
@@ -136,40 +158,45 @@ async fn excel_search_absent(
     worksheet.write_string(0, 2, "考試日期", None).unwrap();
     worksheet.write_string(0, 3, "考試種類", None).unwrap();
     worksheet.write_string(0, 4, "備註", None).unwrap();
-    for (i, (student_id, absent_status, exam_date, exam_type, notes)) in
-        result.iter().enumerate()
-    {
+
+    for (i, result) in results.iter().enumerate() {
         worksheet
-            .write_string(i as u32 + 1, 0, student_id, None)
+            .write_string(i as u32 + 1, 0, &result.student_id, None)
             .unwrap();
         worksheet
-            .write_string(i as u32 + 1, 1, absent_status, None)
+            .write_string(i as u32 + 1, 1, &result.absent_status, None)
             .unwrap();
         worksheet
-            .write_string(i as u32 + 1, 2, &exam_date.to_string(), None)
+            .write_string(i as u32 + 1, 2, &result.exam_date, None)
             .unwrap();
         worksheet
-            .write_string(i as u32 + 1, 3, exam_type, None)
+            .write_string(i as u32 + 1, 3, &result.exam_type, None)
             .unwrap();
         worksheet
-            .write_string(i as u32 + 1, 4, &notes.clone().unwrap_or_default(), None)
+            .write_string(i as u32 + 1, 4, &result.notes.clone().unwrap_or_default(), None)
             .unwrap();
     }
 
     workbook.close().unwrap();
 
-    match std::fs::read(output_filepath) {
-        Ok(file_data) => HttpResponse::Ok()
-            .content_type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            .append_header((
-                "Content-Disposition",
-                "attachment; filename=result_file.xlsx",
-            ))
-            .body(file_data),
+    // 讀取 Excel 檔案並轉為 base64
+    let excel_file_data = match std::fs::read(output_filepath) {
+        Ok(data) => data,
         Err(err) => {
             println!("Error reading generated file: {}", err);
-            HttpResponse::InternalServerError()
-                .body("Failed to generate or retrieve result Excel file")
+            return HttpResponse::InternalServerError()
+                .body("Failed to generate or retrieve result Excel file");
         }
-    }
+    };
+    let excel_file_base64 = base64::engine::general_purpose::STANDARD.encode(&excel_file_data);
+
+    // 構建 JSON 響應
+    let response = ApiResponse {
+        results,
+        excel_file: excel_file_base64,
+    };
+
+    HttpResponse::Ok()
+        .content_type("application/json")
+        .json(response)
 }
