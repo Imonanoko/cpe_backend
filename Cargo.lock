@@ -747,6 +747,7 @@ dependencies = [
  "actix-session",
  "actix-tls",
  "actix-web",
+ "base64 0.22.1",
  "bcrypt",
  "calamine",
  "chrono",

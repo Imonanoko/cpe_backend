@@ -24,3 +24,4 @@ chrono = {version = "0.4.39", features = ["serde"]}
 actix-tls = { version = "3.0.0-rc.2" }
 rustls = "0.20"
 rustls-pemfile = "1.0"
+base64 = "0.22"

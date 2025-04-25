@@ -1,15 +1,31 @@
 use actix_multipart::Multipart;
 use actix_session::Session;
 use actix_web::{post, web, HttpRequest, HttpResponse};
-use calamine::DataType;
-use calamine::Reader;
+use calamine::{DataType, Reader};
 use futures_util::StreamExt as _;
-use sqlx::MySqlPool;
-use sqlx::Row;
+use serde::Serialize;
+use sqlx::{MySqlPool, Row};
 use std::fs::File;
 use std::io::Write;
 use xlsxwriter::Workbook;
+use base64::Engine as _; // 用於 base64 編碼
 use crate::api::lib::is_authorization;
+
+// 定義用於 JSON 序列化的結構體
+#[derive(Serialize)]
+struct StudentResult {
+    student_id: String,
+    name: String,
+    total_correct_answers: u16,
+    max_correct_answers: u8,
+    passed: bool,
+}
+
+#[derive(Serialize)]
+struct ApiResponse {
+    results: Vec<StudentResult>,
+    excel_file: String, // base64 編碼的 Excel 檔案
+}
 
 #[post("/api/excel_search_pass")]
 async fn excel_search_pass(
@@ -23,7 +39,7 @@ async fn excel_search_pass(
     }
 
     let temp_filepath = "./uploads/temp_file.xlsx";
-    //儲存上傳的檔案
+    // 儲存上傳的檔案
     while let Some(Ok(field)) = payload.next().await {
         let content_disposition = field.content_disposition();
         if let Some(filename) = content_disposition.and_then(|cd| cd.get_filename()) {
@@ -46,7 +62,8 @@ async fn excel_search_pass(
         println!("File does not exist: {}", temp_filepath);
         return HttpResponse::InternalServerError().body("Failed to process file");
     }
-    //解析上傳的檔案，取得學號的list
+
+    // 解析上傳的檔案，取得學號的list
     let mut workbook = match calamine::open_workbook_auto(temp_filepath) {
         Ok(wb) => wb,
         Err(err) => {
@@ -62,6 +79,7 @@ async fn excel_search_pass(
             return HttpResponse::BadRequest().body("請將需要查詢的資料放入工作表1");
         }
     };
+
     let header_row = range.rows().next().unwrap();
     let id_col_index = header_row.iter().position(|cell| {
         if let Some(value) = cell.get_string() {
@@ -73,12 +91,11 @@ async fn excel_search_pass(
 
     let mut student_ids: Vec<String> = Vec::new();
     if let Some(col_index) = id_col_index {
-        // 遍歷資料列，篩選符合條件的學號
         student_ids = range
             .rows()
-            .skip(1) // 跳過標題列
-            .filter_map(|row| row.get(col_index)) // 取出對應列的資料
-            .filter_map(|cell| cell.get_string()) // 只取字串
+            .skip(1)
+            .filter_map(|row| row.get(col_index))
+            .filter_map(|cell| cell.get_string())
             .map(|s| s.to_string())
             .collect();
     } else {
@@ -90,6 +107,7 @@ async fn excel_search_pass(
     if student_ids.is_empty() {
         return HttpResponse::BadRequest().body("沒有找到任何有效的學號");
     }
+
     let query = r#"
     SELECT 
         si.StudentID AS StudentID, 
@@ -106,7 +124,7 @@ async fn excel_search_pass(
         si.StudentID, si.Name;
     "#;
 
-    let mut result: Vec<(String, String, u16, u8)> = Vec::new();
+    let mut results: Vec<StudentResult> = Vec::new();
     for student_id in student_ids.iter() {
         let row = match sqlx::query(query)
             .bind(student_id)
@@ -115,14 +133,13 @@ async fn excel_search_pass(
         {
             Ok(row) => row,
             Err(sqlx::Error::RowNotFound) => {
-                return HttpResponse::NotFound().body(format!("查無此學生:{}，請先建立此學生的資料再進行查詢",student_id));
+                return HttpResponse::NotFound().body(format!("查無此學生:{}，請先建立此學生的資料再進行查詢", student_id));
             }
             Err(err) => {
                 return HttpResponse::InternalServerError().body(format!("查詢失敗: {}", err));
             }
         };
-        // println!("rows: {:#?}", rows);
-        
+
         let student_id: String = row.try_get("StudentID").expect("Failed to get StudentID");
         let name: String = row
             .try_get("Name")
@@ -133,11 +150,18 @@ async fn excel_search_pass(
         let max_correct_answers: u8 = row
             .try_get("MaxCorrectAnswers")
             .expect("Failed to get MaxCorrectAnswers");
+        let passed = total_correct_answers >= 3 || max_correct_answers >= 2;
 
-        result.push((student_id, name, total_correct_answers, max_correct_answers));
-        
+        results.push(StudentResult {
+            student_id,
+            name,
+            total_correct_answers,
+            max_correct_answers,
+            passed,
+        });
     }
 
+    // 生成 Excel 檔案
     let output_filepath = "./uploads/result_file.xlsx";
     let workbook = Workbook::new(output_filepath).expect("Failed to create workbook");
     let mut worksheet = workbook.add_worksheet(None).unwrap();
@@ -147,41 +171,45 @@ async fn excel_search_pass(
     worksheet.write_string(0, 2, "累計題數", None).unwrap();
     worksheet.write_string(0, 3, "最高題數", None).unwrap();
     worksheet.write_string(0, 4, "是否通過", None).unwrap();
-    for (i, (student_id, name, total_correct_answers, max_correct_answers)) in
-        result.iter().enumerate()
-    {
+
+    for (i, result) in results.iter().enumerate() {
         worksheet
-            .write_string(i as u32 + 1, 0, student_id, None)
+            .write_string(i as u32 + 1, 0, &result.student_id, None)
             .unwrap();
         worksheet
-            .write_string(i as u32 + 1, 1, &name, None)
+            .write_string(i as u32 + 1, 1, &result.name, None)
             .unwrap();
         worksheet
-            .write_number(i as u32 + 1, 2, *total_correct_answers as f64, None)
+            .write_number(i as u32 + 1, 2, result.total_correct_answers as f64, None)
             .unwrap();
         worksheet
-            .write_number(i as u32 + 1, 3, *max_correct_answers as f64, None)
+            .write_number(i as u32 + 1, 3, result.max_correct_answers as f64, None)
             .unwrap();
-        let pass = *total_correct_answers >= 3 || *max_correct_answers >= 2;
         worksheet
-            .write_string(i as u32 + 1, 4, if pass { "通過" } else { "不通過" }, None)
+            .write_string(i as u32 + 1, 4, if result.passed { "通過" } else { "不通過" }, None)
             .unwrap();
     }
 
     workbook.close().unwrap();
 
-    match std::fs::read(output_filepath) {
-        Ok(file_data) => HttpResponse::Ok()
-            .content_type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            .append_header((
-                "Content-Disposition",
-                "attachment; filename=result_file.xlsx",
-            ))
-            .body(file_data),
+    // 讀取 Excel 檔案並轉為 base64
+    let excel_file_data = match std::fs::read(output_filepath) {
+        Ok(data) => data,
         Err(err) => {
             println!("Error reading generated file: {}", err);
-            HttpResponse::InternalServerError()
-                .body("Failed to generate or retrieve result Excel file")
+            return HttpResponse::InternalServerError()
+                .body("Failed to generate or retrieve result Excel file");
         }
-    }
+    };
+    let excel_file_base64 = base64::engine::general_purpose::STANDARD.encode(&excel_file_data);
+
+    // 構建 JSON 響應
+    let response = ApiResponse {
+        results,
+        excel_file: excel_file_base64,
+    };
+
+    HttpResponse::Ok()
+        .content_type("application/json")
+        .json(response)
 }
