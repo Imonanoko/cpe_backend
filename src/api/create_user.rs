@@ -7,6 +7,7 @@ use sqlx::Error;
 // curl -X POST http://localhost:8888/api/users \
 // -H "Content-Type: application/json" \
 // -d '{"username": "newuser", "password": "securepassword"}'
+//記得同時間只能一人使用，不然會有一些問題
 // 定義接收的用戶請求結構
 #[derive(Deserialize)]
 pub struct CreateUserRequest {

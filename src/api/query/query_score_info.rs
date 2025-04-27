@@ -76,7 +76,7 @@ async fn query_score_info(
             let status = match (record.IsAbsent, record.IsExcused) {
                 (Some(1), Some(1)) => "請假",
                 (Some(1), Some(0)) => "缺考",
-                _ => "無",       // 其他情況
+                _ => "出席",       // 其他情況
             };
             score_info.push(ScoreInfo{
                 student_id:record.StudentID.clone(),
