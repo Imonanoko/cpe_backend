@@ -8,7 +8,7 @@ use crate::api::lib::is_authorization;
 #[derive(Deserialize)]
 pub struct ScholarshipQueryForm {
     status: String,                  // all | claimed | unclaimed
-    academic_year: Option<u32>,     // e.g., 113 → 2024/09~2025/08
+    academic_year: Option<u32>,    
 }
 
 #[derive(Serialize)]
@@ -70,6 +70,14 @@ pub async fn query_scholarship_json(
             JOIN StudentInfo si ON sr.StudentID = si.StudentID
             WHERE (? IS NULL OR sr.ReceivedDate >= ?)
               AND (? IS NULL OR sr.ReceivedDate <= ?)
+              AND EXISTS (
+                  SELECT 1
+                  FROM ExamAttendance ea
+                  JOIN ExamSessions es ON ea.ExamSession_SN = es.SN
+                  WHERE ea.StudentID = sr.StudentID
+                    AND ea.CorrectAnswersCount = sr.CorrectAnswersCount
+                    AND es.ExamDate <= sr.ReceivedDate
+              )
             "#,
             start_date, start_date,
             end_date, end_date
