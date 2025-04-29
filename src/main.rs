@@ -45,6 +45,7 @@ use api::{
         delete_exam_score::delete_exam_score,
         delete_scholarship_records::delete_scholarship_records,
         delete_scholarship::delete_scholarship,
+        delete_student::delete_student,
     }
 };
 
@@ -150,6 +151,7 @@ async fn main() -> Result<(), std::io::Error> {
             .service(update_exam_score)
             .service(delete_scholarship)
             .service(update_scholarship)
+            .service(delete_student)
             // .service(create_user) //要創建新使用者在打開
     })
     .bind_rustls(format!("{}:{}", ip, port), config)?
