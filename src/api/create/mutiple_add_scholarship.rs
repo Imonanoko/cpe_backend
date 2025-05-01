@@ -176,7 +176,42 @@ async fn mutiple_add_scholarship(
         };
 
         let notes = row.get(3).and_then(|c| c.get_string()).unwrap_or("").to_string();
+        let exists = sqlx::query_scalar!(
+            r#"
+            SELECT 1
+            FROM ExamAttendance ea
+            JOIN StudentInfo si ON ea.StudentID = si.StudentID
+            LEFT JOIN ExamSessions es ON ea.ExamSession_SN = es.SN 
+                AND es.ExamDate <= ?
+                AND es.ExamType = '官辦'
+            WHERE ea.StudentID = ?
+              AND ea.CorrectAnswersCount = ?
+              AND ea.IsAbsent = FALSE
+              AND ea.IsExcused = FALSE
+            GROUP BY si.StudentID, si.Name, ea.CorrectAnswersCount
+            HAVING MAX(es.ExamDate) IS NOT NULL
+            LIMIT 1
+            "#,
+            received_date,
+            student_id,
+            correct_count
+        )
+        .fetch_optional(&mut *tx) // 用交易物件執行
+        .await;
 
+        match exists {
+            Ok(Some(_)) => (),
+            Ok(None) => {
+                tx.rollback().await.ok();
+                return HttpResponse::BadRequest()
+                    .body(format!("第 {} 列的學生， 學號:{} 沒有在{}以前的考試中答對題數是{}", line_num, student_id, received_date, correct_count));
+            }
+            Err(e) => {
+                tx.rollback().await.ok();
+                return HttpResponse::InternalServerError()
+                    .body(format!("第 {} 列查詢錯誤: {}", line_num, e));
+            }
+        }
         // 寫入 DB（若重複，回滾整批）
         let query = r#"
             INSERT INTO ScholarshipRecord (StudentID, CorrectAnswersCount, ReceivedDate, ScholarshipAmount, Notes)

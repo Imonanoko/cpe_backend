@@ -38,23 +38,27 @@ pub async fn query_scholarship_excel(
     if form.status == "all" || form.status == "claimed" {
         let claimed = sqlx::query!(
             r#"
-            SELECT sr.StudentID, si.Name, sr.CorrectAnswersCount, sr.ReceivedDate, sr.Notes, sr.ScholarshipAmount,
-                (
-                    SELECT es.ExamDate
-                    FROM ExamAttendance ea
-                    JOIN ExamSessions es ON ea.ExamSession_SN = es.SN
-                    WHERE ea.StudentID = sr.StudentID
-                    AND ea.CorrectAnswersCount = sr.CorrectAnswersCount
-                    AND es.ExamDate <= sr.ReceivedDate
-                    AND ea.IsAbsent = FALSE
-                    AND ea.IsExcused = FALSE
-                    ORDER BY es.ExamDate DESC
-                    LIMIT 1
-                ) AS ExamDate
+            SELECT 
+                sr.StudentID, 
+                si.Name, 
+                sr.CorrectAnswersCount, 
+                sr.ReceivedDate, 
+                sr.Notes, 
+                sr.ScholarshipAmount,
+                MAX(es.ExamDate) AS ExamDate
             FROM ScholarshipRecord sr
             JOIN StudentInfo si ON sr.StudentID = si.StudentID
+            LEFT JOIN ExamAttendance ea ON ea.StudentID = sr.StudentID 
+                AND ea.CorrectAnswersCount = sr.CorrectAnswersCount
+                AND ea.IsAbsent = FALSE
+                AND ea.IsExcused = FALSE
+            LEFT JOIN ExamSessions es ON ea.ExamSession_SN = es.SN 
+                AND es.ExamDate <= sr.ReceivedDate
+                AND es.ExamType = '官辦'
             WHERE (? IS NULL OR sr.ReceivedDate >= ?)
-              AND (? IS NULL OR sr.ReceivedDate <= ?)
+            AND (? IS NULL OR sr.ReceivedDate <= ?)
+            GROUP BY sr.StudentID, si.Name, sr.CorrectAnswersCount, sr.ReceivedDate, sr.Notes, sr.ScholarshipAmount
+            HAVING MAX(es.ExamDate) IS NOT NULL
             "#,
             start_date, start_date,
             end_date, end_date

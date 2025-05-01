@@ -56,28 +56,18 @@ pub async fn query_scholarship_json(
                 sr.ReceivedDate, 
                 sr.Notes, 
                 sr.ScholarshipAmount,
-                (
-                    SELECT es.ExamDate 
-                    FROM ExamAttendance ea
-                    JOIN ExamSessions es ON ea.ExamSession_SN = es.SN
-                    WHERE ea.StudentID = sr.StudentID
-                      AND ea.CorrectAnswersCount = sr.CorrectAnswersCount
-                      AND es.ExamDate <= sr.ReceivedDate
-                    ORDER BY es.ExamDate DESC
-                    LIMIT 1
-                ) AS ExamDate
+                MAX(es.ExamDate) AS ExamDate
             FROM ScholarshipRecord sr
             JOIN StudentInfo si ON sr.StudentID = si.StudentID
+            LEFT JOIN ExamAttendance ea ON ea.StudentID = sr.StudentID 
+                AND ea.CorrectAnswersCount = sr.CorrectAnswersCount
+            LEFT JOIN ExamSessions es ON ea.ExamSession_SN = es.SN 
+                AND es.ExamDate <= sr.ReceivedDate
+                AND es.ExamType = '官辦'
             WHERE (? IS NULL OR sr.ReceivedDate >= ?)
-              AND (? IS NULL OR sr.ReceivedDate <= ?)
-              AND EXISTS (
-                  SELECT 1
-                  FROM ExamAttendance ea
-                  JOIN ExamSessions es ON ea.ExamSession_SN = es.SN
-                  WHERE ea.StudentID = sr.StudentID
-                    AND ea.CorrectAnswersCount = sr.CorrectAnswersCount
-                    AND es.ExamDate <= sr.ReceivedDate
-              )
+            AND (? IS NULL OR sr.ReceivedDate <= ?)
+            GROUP BY sr.StudentID, si.Name, sr.CorrectAnswersCount, sr.ReceivedDate, sr.Notes, sr.ScholarshipAmount
+            HAVING MAX(es.ExamDate) IS NOT NULL
             "#,
             start_date, start_date,
             end_date, end_date
