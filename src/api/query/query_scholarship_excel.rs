@@ -9,6 +9,7 @@ use crate::api::lib::is_authorization;
 #[derive(Deserialize)]
 pub struct ScholarshipExcelForm {
     academic_year: Option<u32>,
+    exam_academic_year: Option<u32>,
     status: String, // all | claimed | unclaimed
 }
 
@@ -23,11 +24,20 @@ pub async fn query_scholarship_excel(
         return HttpResponse::Unauthorized().body("Session 無效或過期");
     }
 
-    let (start_date, end_date) = match form.academic_year {
+    let (recv_start, recv_end) = match form.academic_year {
         Some(year) => {
-            let start = NaiveDate::from_ymd_opt((year as i32) + 1911, 9, 1).unwrap();
-            let end = NaiveDate::from_ymd_opt((year as i32) + 1912, 8, 31).unwrap();
-            (Some(start), Some(end))
+            let s = NaiveDate::from_ymd_opt((year as i32) + 1911, 8, 1).unwrap();
+            let e = NaiveDate::from_ymd_opt((year as i32) + 1912, 7, 31).unwrap();
+            (Some(s), Some(e))
+        }
+        None => (None, None),
+    };
+
+    let (exam_start, exam_end) = match form.exam_academic_year {
+        Some(year) => {
+            let s = NaiveDate::from_ymd_opt((year as i32) + 1911, 8, 1).unwrap();
+            let e = NaiveDate::from_ymd_opt((year as i32) + 1912, 7, 31).unwrap();
+            (Some(s), Some(e))
         }
         None => (None, None),
     };
@@ -60,8 +70,8 @@ pub async fn query_scholarship_excel(
             GROUP BY sr.StudentID, si.Name, sr.CorrectAnswersCount, sr.ReceivedDate, sr.Notes, sr.ScholarshipAmount
             HAVING MAX(es.ExamDate) IS NOT NULL
             "#,
-            start_date, start_date,
-            end_date, end_date
+            recv_start, recv_start,
+            recv_end, recv_end
         )
         .fetch_all(db.get_ref())
         .await;
@@ -105,11 +115,15 @@ pub async fn query_scholarship_excel(
                   AND ea.CorrectAnswersCount >= 3
                   AND ea.IsAbsent = FALSE
                   AND ea.IsExcused = FALSE
+                  AND (? IS NULL OR es.ExamDate >= ?)
+                  AND (? IS NULL OR es.ExamDate <= ?)
             )
             SELECT StudentID, Name, CorrectAnswersCount, ExamDate
             FROM RankedResults
             WHERE rn = 1
-            "#
+            "#,
+            exam_start, exam_start,
+            exam_end, exam_end
         )
         .fetch_all(db.get_ref())
         .await;

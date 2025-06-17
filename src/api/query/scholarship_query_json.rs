@@ -8,7 +8,8 @@ use crate::api::lib::is_authorization;
 #[derive(Deserialize)]
 pub struct ScholarshipQueryForm {
     status: String,                  // all | claimed | unclaimed
-    academic_year: Option<u32>,    
+    academic_year: Option<u32>,
+    exam_academic_year: Option<u32>,
 }
 
 #[derive(Serialize)]
@@ -39,6 +40,14 @@ pub async fn query_scholarship_json(
             let start = NaiveDate::from_ymd_opt((year as i32) + 1911, 9, 1).unwrap();
             let end = NaiveDate::from_ymd_opt((year as i32) + 1912, 8, 31).unwrap();
             (Some(start), Some(end))
+        }
+        None => (None, None),
+    };
+    let (exam_start, exam_end) = match form.exam_academic_year {
+        Some(y) => {
+            let s = NaiveDate::from_ymd_opt((y as i32) + 1911, 9, 1).unwrap();
+            let e = NaiveDate::from_ymd_opt((y as i32) + 1912, 8, 31).unwrap();
+            (Some(s), Some(e))
         }
         None => (None, None),
     };
@@ -124,12 +133,16 @@ pub async fn query_scholarship_json(
                   AND ea.CorrectAnswersCount >= 3
                   AND ea.IsAbsent = FALSE
                   AND ea.IsExcused = FALSE
+                  AND (? IS NULL OR es.ExamDate >= ?)
+                  AND (? IS NULL OR es.ExamDate <= ?)
             )
             SELECT StudentID, Name, CorrectAnswersCount, ExamDate
             FROM RankedResults
             WHERE rn = 1
             ORDER BY StudentID
             "#,
+            exam_start, exam_start,
+            exam_end,   exam_end
         )
         .fetch_all(db.get_ref())
         .await;
