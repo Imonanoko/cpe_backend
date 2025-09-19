@@ -7,3 +7,4 @@ pub mod query_exam_info;
 pub mod query_score_info;
 pub mod scholarship_query_json;
 pub mod query_scholarship_excel;
+pub mod query_passed_by_year;

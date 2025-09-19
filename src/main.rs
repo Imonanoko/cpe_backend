@@ -20,6 +20,7 @@ use api::{
         query_score_info::query_score_info,
         scholarship_query_json::query_scholarship_json,
         query_scholarship_excel::query_scholarship_excel,
+        query_passed_by_year::query_passed_by_year,
     },
     create::{
         add_exam::add_exam,
@@ -152,6 +153,7 @@ async fn main() -> Result<(), std::io::Error> {
             .service(delete_scholarship)
             .service(update_scholarship)
             .service(delete_student)
+            .service(query_passed_by_year)
             // .service(create_user) //要創建新使用者在打開
     })
     .bind_rustls(format!("{}:{}", ip, port), config)?
